@@ -99,9 +99,7 @@ function applyFilters() {
   `).join('');
 }
 
-/* =======================
-   INIT
-======================= */
+/* INIT */
 document.addEventListener('DOMContentLoaded', () => {
   updateCartCount();
 
