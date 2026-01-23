@@ -1,6 +1,24 @@
 const express = require("express");
 const Product = require("../models/Product");
 
+// -------- Security helpers --------
+const ALLOWED_SORT = [
+  "price-asc",
+  "price-desc",
+  "name-asc",
+  "name-desc"
+];
+
+function sanitizeString(value) {
+  if (typeof value !== "string") return undefined;
+  return value.replace(/[${}]/g, "").trim();
+}
+
+function sanitizeNumber(value, def) {
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 ? num : def;
+}
+
 const router = express.Router();
 
 // CREATE: POST /products
@@ -16,12 +34,57 @@ router.post("/", async (req, res) => {
   }
 });
 
-// READ ALL: GET /products
+// READ ALL (with filters & sorting): GET /products
 router.get("/", async (req, res) => {
   try {
-    const items = await Product.find().sort({ createdAt: -1 });
+    const rawCategory = req.query.category;
+    const rawMin = req.query.min;
+    const rawMax = req.query.max;
+    const rawSort = req.query.sort;
+    const rawPage = req.query.page;
+    const rawLimit = req.query.limit;
+
+    const category = sanitizeString(rawCategory);
+
+    const min = sanitizeNumber(rawMin, undefined);
+    const max = sanitizeNumber(rawMax, undefined);
+
+    const sort = ALLOWED_SORT.includes(rawSort) ? rawSort : undefined;
+
+    const pageNumber = Math.max(sanitizeNumber(rawPage, 1), 1);
+    const limitNumber = Math.min(Math.max(sanitizeNumber(rawLimit, 8), 1), 50); // hard cap
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // -------- FILTER --------
+    const filter = {};
+
+    if (category) {
+      filter.category = category;
+    }
+
+    if (min !== undefined || max !== undefined) {
+      filter.price = {};
+      if (min !== undefined) filter.price.$gte = min;
+      if (max !== undefined) filter.price.$lte = max;
+    }
+
+    // -------- SORT --------
+    let sortOption = { createdAt: -1 };
+
+    if (sort === "price-asc") sortOption = { price: 1 };
+    else if (sort === "price-desc") sortOption = { price: -1 };
+    else if (sort === "name-asc") sortOption = { name: 1 };
+    else if (sort === "name-desc") sortOption = { name: -1 };
+
+    const items = await Product.find(filter)
+      .sort(sortOption)
+      .skip(skip)
+      .limit(limitNumber);
+
     return res.json(items);
+
   } catch (err) {
+    console.error(err);
     return res.status(500).json({ message: "Server error" });
   }
 });
